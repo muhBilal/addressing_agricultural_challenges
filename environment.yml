@@ -1,0 +1,23 @@
+name: pengenalan-pola
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip
+
+  - jupyterlab
+  - ipykernel
+
+  - numpy
+  - pandas
+  - scipy
+
+  - scikit-learn
+
+  - opencv
+  - scikit-image
+
+  - matplotlib
+  - tqdm
+
+  - joblib
