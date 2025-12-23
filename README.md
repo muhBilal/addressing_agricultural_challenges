@@ -11,6 +11,7 @@ noise in this image preprocessing.
 
 ## Requirements 
 - python-opencv
+- Scikit Learn
 - pandas
 - tqdm 
 
