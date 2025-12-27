@@ -1,37 +1,38 @@
-# addressing_agricultural_challenges
+# Addressing Agricultural Challenges
 
 ## Reference :
 
-Image preprocess : S. Malathy et al. [13] introduced an image-processing approach
-for detecting fruit disease. They worked with an online dataset and
-mentioned an image restoration technique used to minimize image
-noise in this image preprocessing.
+**Image Preprocess:** Mengacu pada S. Malathy et al. [13] yang mengajukan pendekatan *image processing* untuk deteksi penyakit buah. Mereka menggunakan dataset online dan menerapkan teknik restorasi citra untuk meminimalisir *noise* pada tahap preprocessing.
 
-## Annotated Files : Bounding Box with Yolo
+## Annotated Files : Bounding Box with YOLO
 
-## Requirements 
-- python-opencv
-- Scikit Learn
-- pandas
-- tqdm 
+Dataset anotasi menggunakan format YOLO untuk lokalisasi area penyakit.
 
-# Dragon Fruit Disease Recognition — dengan pendekatan paper
+## Requirements / Tech Stack
 
-Panduan singkat alur/prosedur project dari **awal (dataset)** sampai **output akhir (evaluasi model)**, sesuai pendekatan paper.
+* python-opencv
+* Scikit Learn
+* pandas
+* tqdm
+
+# Dragon Fruit Disease Recognition — Pendekatan Paper
+
+Berikut adalah **flow** pengerjaan proyek dari **raw dataset** hingga **model evaluation**, diadaptasi dari metode paper referensi.
 
 ---
 
 ## 0) Struktur Data (Input)
 
-Siapkan Dataset ini : 
+Pastikan direktori dataset sudah di-setup seperti ini:
 
-- `data/Converted Images/`  
-  Berisi citra hasil konversi (warna) yang akan diproses (per kelas: Healthy, Anthracnose, dll).
+* `data/Converted Images/`
+Direktori ini berisi *raw images* yang sudah dikonversi (citra berwarna) yang siap diproses. Struktur folder berdasarkan nama kelas (Healthy, Anthracnose, dsb).
+* `data/Annotated Files/`
+Direktori ini berisi:
+* File gambar anotasi (sebagai referensi visual).
+* File `.txt` dengan **format YOLO normalized (0–1)** → berisi koordinat *bounding box* area lesi/penyakit (wajib ada untuk *guided segmentation*).
 
-- `data/Annotated Files/`  
-  Berisi:
-  - file gambar anotasi (ukuran bisa seperti original)
-  - file `.txt` **format YOLO normalized (0–1)** → berisi bounding box area lesi/penyakit (dipakai untuk guided segmentation)
+
 
 ---
 
@@ -39,22 +40,24 @@ Siapkan Dataset ini :
 
 ### Notebook: `preprocess.ipynb`
 
-**Tujuan:** Menyamakan preprocessing dengan paper agar citra siap untuk segmentasi & ekstraksi fitur.
+**Goal:** Mereplikasi teknik preprocessing sesuai paper agar citra siap untuk tahap segmentasi & ekstraksi fitur.
 
-**Langkah utama (sesuai paper):**
-1. Baca citra dari `data/Converted Images/`
-2. Resize ke **300×300** (Bilinear / `cv2.INTER_LINEAR`)
-3. Noise reduction: **Gaussian Blur**
-4. Enhancement: **Gamma Correction**
-5. Enhancement: **Histogram Equalization**
+**Main Steps (sesuai paper):**
+
+1. **Load Image** dari direktori `data/Converted Images/`.
+2. **Resizing** ke dimensi **300×300** (menggunakan interpolasi `cv2.INTER_LINEAR`).
+3. **Noise Reduction:** Implementasi **Gaussian Blur**.
+4. **Enhancement:** Penerapan **Gamma Correction**.
+5. **Enhancement:** Penerapan **Histogram Equalization** untuk perbaikan kontras.
 
 **Output:**
-- Folder gambar hasil preprocess:  
-  `outputs/preprocessed_index/<ClassName>/*`
-- File index (penghubung untuk notebook lain):  
-  `outputs/preprocessed_index.csv`
 
-> Semua notebook setelah ini menggunakan `outputs/preprocessed_index.csv` sebagai sumber pathnya.
+* Direktori gambar hasil preprocess:
+`outputs/preprocessed_index/<ClassName>/*`
+* File index (manifest file untuk mapping path):
+`outputs/preprocessed_index.csv`
+
+> **Note:** Semua notebook selanjutnya akan me-load `outputs/preprocessed_index.csv` sebagai referensi path utama.
 
 ---
 
@@ -62,94 +65,114 @@ Siapkan Dataset ini :
 
 ### Notebook: `segmentation_test.ipynb`
 
-**Tujuan:** Validasi visual bahwa ROI mask hasil segmentasi sudah “nempel” ke area lesi (objek).
+**Goal:** *Sanity check* / Validasi visual untuk memastikan ROI mask hasil segmentasi sudah presisi menutupi area lesi (objek).
 
-**Langkah utama:**
-1. Load `outputs/preprocessed_index.csv`
-2. Ambil `orig_path` (warna) → resize 300×300
-3. Ambil `.txt` YOLO (normalized) → buat `lesion_mask`
-4. Jalankan **Guided KMeans (LAB)**:
-   - segmentasi KMeans (k=3)
-   - pilih cluster ROI yang overlap paling besar dengan `lesion_mask`
-   - refine mask (morphology + largest component)
-5. Simpan contoh hasil overlay ROI
+**Main Steps:**
+
+1. Load `outputs/preprocessed_index.csv`.
+2. Ambil `orig_path` (citra RGB) → resize 300×300.
+3. Parsing file `.txt` YOLO (normalized) → generate `lesion_mask` (ground truth).
+4. Eksekusi **Guided KMeans (LAB Color Space)**:
+* Lakukan segmentasi KMeans (k=3).
+* Filter cluster ROI yang memiliki *IoU (Intersection over Union)* atau overlap terbesar dengan `lesion_mask`.
+* **Refine Mask:** Operasi morfologi + seleksi *largest component*.
+
+
+5. Simpan sampel hasil overlay ROI untuk inspeksi.
 
 **Output:**
-- Sample overlay hasil segmentasi:  
-  `outputs/samples/segmentation_guided/*.png`
 
-> Notebook ini opsional, tetapi sangat membantu mengecek apakah segmentasi sudah oke sebelum ekstraksi fitur massal.
+* Sampel overlay hasil segmentasi:
+`outputs/samples/segmentation_guided/*.png`
+
+> **Note:** Step ini opsional, tapi *highly recommended* buat debugging logika segmentasi sebelum lanjut ke ekstraksi fitur massal.
 
 ---
 
-## 3) Feature Extraction (13 fitur)
+## 3) Feature Extraction (13 Features)
 
 ### Notebook: `features_extraction.ipynb`
 
-**Tujuan:** Menghasilkan dataset fitur numerik untuk feature selection & klasifikasi.
+**Goal:** Generate dataset berisi fitur numerik (ekstraksi ciri) untuk keperluan seleksi fitur & klasifikasi.
 
 **Input:**
-- `outputs/preprocessed_index.csv`
-- `data/Annotated Files/*.txt` (YOLO normalized)
 
-**Langkah utama:**
-Untuk setiap citra:
-1. Baca `orig_path` (warna) → resize 300×300 → untuk **KMeans-LAB guided segmentation**
-2. Baca `prep_path` (grayscale hasil preprocessing 300×300) → untuk **ekstraksi fitur**
-3. Jika `.txt` tersedia → buat ROI mask guided  
-   Jika tidak (mis. Healthy) → fallback ROI = full image
-4. Ekstrak **13 fitur** (statistik + GLCM), contoh:
-   - Statistik intensitas: Mean, Variance, Std, Skewness, Kurtosis, RMS, Entropy, Smoothness
-   - GLCM: Contrast, Correlation, Energy, Homogeneity + (IDM)
+* `outputs/preprocessed_index.csv`
+* `data/Annotated Files/*.txt` (YOLO normalized)
+
+**Main Steps:**
+Iterasi untuk setiap citra:
+
+1. Load `orig_path` (RGB) → resize 300×300 → input untuk **KMeans-LAB guided segmentation**.
+2. Load `prep_path` (Grayscale hasil preprocess) → input untuk kalkulasi nilai piksel (**ekstraksi fitur**).
+3. **ROI Logic:**
+* Jika file `.txt` ada → generate ROI mask via guided segmentation.
+* Jika tidak ada (misal kelas Healthy) → *fallback* ROI = *full image*.
+
+
+4. Ekstrak **13 Fitur** (Statistik + GLCM), meliputi:
+* **Intensity Stats:** Mean, Variance, Std Dev, Skewness, Kurtosis, RMS, Entropy, Smoothness.
+* **GLCM (Texture):** Contrast, Correlation, Energy, Homogeneity + (IDM).
+
+
 
 **Output:**
-- Dataset fitur final:  
-  `outputs/extracted_features.csv`
+
+* Dataset fitur final (CSV):
+`outputs/extracted_features.csv`
 
 ---
 
 ## 4) Feature Selection — ANOVA
 
-### Notebook: `anova_feats_selection.ipynb` (paper-style)
+### Notebook: `anova_feats_selection.ipynb` (Paper Approach)
 
-**Tujuan:** Ranking fitur pakai ANOVA F-test, lalu buat dataset Top-K.
+**Goal:** Ranking fitur menggunakan metode statistik ANOVA F-test, lalu generate dataset Top-K fitur terbaik.
 
 **Input:**
-- `outputs/extracted_features.csv`
+
+* `outputs/extracted_features.csv`
 
 **Output:**
-- Ranking fitur ANOVA:  
-  `outputs/rankings/anova_rank.csv`
-- Plot ranking (bar):  
-  `outputs/rankings/anova_rank_top.png`
-- Dataset Top-K ANOVA (dipakai modeling):  
-  - `outputs/datasets/data5A.csv`
-  - `outputs/datasets/data7A.csv`
-  - `outputs/datasets/data9A.csv`
-  - `outputs/datasets/data10A.csv`
+
+* Ranking fitur berdasarkan skor ANOVA:
+`outputs/rankings/anova_rank.csv`
+* Visualisasi ranking (Bar Plot):
+`outputs/rankings/anova_rank_top.png`
+* Dataset Top-K ANOVA (siap training):
+* `outputs/datasets/data5A.csv` (Top 5)
+* `outputs/datasets/data7A.csv` (Top 7)
+* `outputs/datasets/data9A.csv` (Top 9)
+* `outputs/datasets/data10A.csv` (Top 10)
+
+
 
 ---
 
-## 5) Feature Selection — LASSO (paper/github style)
+## 5) Feature Selection — LASSO (Repo/Github Style)
 
-### Notebook: `lasso_feats_selection.ipynb` (paper-style)
+### Notebook: `lasso_feats_selection.ipynb` (Paper Approach)
 
-**Tujuan:** Ranking fitur pakai LASSO seperti repo penulis (MinMaxScaler + Lasso).  
-Tambahan: Mutual Information untuk pembanding (sesuai repo).
+**Goal:** Ranking fitur menggunakan LASSO (seperti implementasi di repo penulis: MinMaxScaler + Lasso).
+*Opsional: Komparasi dengan Mutual Information.*
 
 **Input:**
-- `outputs/extracted_features.csv`
+
+* `outputs/extracted_features.csv`
 
 **Output:**
-- Ranking fitur LASSO:  
-  `outputs/rankings/lasso_rank.csv`
-- Ranking Mutual Info (opsional):  
-  `outputs/rankings/mutual_info_rank.csv`
-- Dataset Top-K LASSO (dipakai modeling):  
-  - `outputs/datasets/data5L.csv`
-  - `outputs/datasets/data7L.csv`
-  - `outputs/datasets/data9L.csv`
-  - `outputs/datasets/data10L.csv`
+
+* Ranking fitur berdasarkan koefisien LASSO:
+`outputs/rankings/lasso_rank.csv`
+* Ranking Mutual Info (opsional/benchmark):
+`outputs/rankings/mutual_info_rank.csv`
+* Dataset Top-K LASSO (siap training):
+* `outputs/datasets/data5L.csv`
+* `outputs/datasets/data7L.csv`
+* `outputs/datasets/data9L.csv`
+* `outputs/datasets/data10L.csv`
+
+
 
 ---
 
@@ -157,51 +180,58 @@ Tambahan: Mutual Information untuk pembanding (sesuai repo).
 
 ### Notebook: `classification_model.ipynb`
 
-**Tujuan:** Melatih & mengevaluasi model ML berdasarkan dataset Top-K dari ANOVA dan LASSO.
+**Goal:** Training & Evaluasi performa berbagai algoritma ML menggunakan dataset Top-K hasil ANOVA dan LASSO.
 
-**Model yang diuji:**
-- Logistic Regression
-- KNN
-- Decision Tree
-- AdaBoost
-- Random Forest
-- SVM (RBF)
+**Tested Models:**
+
+* Logistic Regression
+* KNN (K-Nearest Neighbors)
+* Decision Tree
+* AdaBoost
+* Random Forest
+* SVM (RBF Kernel)
 
 **Input:**
-- `outputs/datasets/data5A.csv`, `data7A.csv`, `data9A.csv`, `data10A.csv`
-- `outputs/datasets/data5L.csv`, `data7L.csv`, `data9L.csv`, `data10L.csv`
+
+* Dataset varian ANOVA: `data5A.csv` s/d `data10A.csv`
+* Dataset varian LASSO: `data5L.csv` s/d `data10L.csv`
 
 **Output:**
-- Plot perbandingan performa:  
-  - `outputs/plots/anova_f1_macro_vs_k.png`
-  - `outputs/plots/lasso_f1_macro_vs_k.png`
-  - `outputs/plots/best_f1_macro_anova_vs_lasso.png`
-- Confusion matrix best setting (contoh):  
-  - `outputs/plots/cm_best_anova_top10.png`
-  - `outputs/plots/cm_best_lasso_top10.png`
 
-> Notebook ini menjadi output akhir penelitian: perbandingan model + perbandingan feature selection ANOVA vs LASSO untuk Top-K.
+* Plot Komparasi Performa (Metrics):
+* `outputs/plots/anova_f1_macro_vs_k.png`
+* `outputs/plots/lasso_f1_macro_vs_k.png`
+* `outputs/plots/best_f1_macro_anova_vs_lasso.png`
+
+
+* Confusion Matrix (Best Model):
+* `outputs/plots/cm_best_anova_top10.png`
+* `outputs/plots/cm_best_lasso_top10.png`
+
+
+
+> Notebook ini adalah hasil akhir penelitian: berisi analisis komparasi antar model serta efektivitas Feature Selection (ANOVA vs LASSO).
 
 ---
 
-## Urutan Run yang Disarankan
+## Rekomendasi Flow Eksekusi
 
-1. `preprocess.ipynb`
-2. `segmentation_test.ipynb` (opsional)
-3. `features_extraction.ipynb` 
+1. `preprocess.ipynb` (Wajib pertama)
+2. `segmentation_test.ipynb` (Cek visual ROI)
+3. `features_extraction.ipynb` (Generate `extracted_features.csv`)
 4. `anova_feats_selection.ipynb`
 5. `lasso_feats_selection.ipynb`
-6. `classification_model.ipynb` 
+6. `classification_model.ipynb` (Final output)
 
 ---
 
-## Ringkas Output Akhir yang Dicari
+## Recap Output Final
 
-- **Dataset fitur:** `outputs/extracted_features.csv`
-- **Ranking fitur:** `outputs/rankings/anova_rank.csv` & `outputs/rankings/lasso_rank.csv`
-- **Dataset Top-K:** `outputs/datasets/data* A.csv` & `data* L.csv`
-- **Grafik & evaluasi model:** `outputs/plots/*.png`
+Yang harus ada di folder `outputs/` setelah semua *run* selesai:
+
+* **Main Dataset:** `outputs/extracted_features.csv`
+* **Feature Rankings:** `outputs/rankings/anova_rank.csv` & `lasso_rank.csv`
+* **Training Sets:** `outputs/datasets/data* A.csv` & `data* L.csv`
+* **Evaluation Plots:** `outputs/plots/*.png` (Grafik F1-Score & Confusion Matrix)
 
 ---
-
-
