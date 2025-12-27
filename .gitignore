@@ -4,4 +4,4 @@ venv/
 __pycache__/
 
 # Output / generated files
-outputs/
+# outputs/
